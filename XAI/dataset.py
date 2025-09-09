@@ -5,33 +5,34 @@ Dataset preparation and loading utilities.
 import os
 import shutil
 from pathlib import Path
-import pandas as pd
+
 import numpy as np
-from PIL import Image
+import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
+from albumentations.pytorch import ToTensorV2
+from PIL import Image
+from skimage import io
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from torchvision.transforms import v2
-from albumentations.pytorch import ToTensorV2
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-from XAI.preprocessing.C_LAHE import CLAHE
-from XAI.preprocessing.enhance_clarity import EnhanceClarityCV
-from XAI.preprocessing.hair_removal import HairRemoval
-from XAI.preprocessing.contrast_stretch import ContrastStretch
-from skimage import io
 
 from XAI.config import (
-    INTERIM_DATA_DIR,
-    RAW_DATA_DIR,
-    HAM10000_METADATA,
+    BATCH_SIZE,
+    CLASS_NAMES,
     HAM10000_IMAGES_PART1,
     HAM10000_IMAGES_PART2,
-    CLASS_NAMES,
-    RANDOM_SEED,
-    BATCH_SIZE,
+    HAM10000_METADATA,
+    INTERIM_DATA_DIR,
     MODEL_INPUT_SIZE,
+    RANDOM_SEED,
+    RAW_DATA_DIR,
 )
+from XAI.preprocessing.C_LAHE import CLAHE
+from XAI.preprocessing.contrast_stretch import ContrastStretch
+from XAI.preprocessing.enhance_clarity import EnhanceClarityCV
+from XAI.preprocessing.hair_removal import HairRemoval
 
 
 def download_and_extract_ham10000():
@@ -43,7 +44,9 @@ def download_and_extract_ham10000():
 
     # Download dataset using kaggle API
     print("Downloading HAM10000 dataset...")
-    os.system(f"kaggle datasets download -d kmader/skin-cancer-mnist-ham10000 -p {RAW_DATA_DIR}")
+    os.system(
+        f"kaggle datasets download -d kmader/skin-cancer-mnist-ham10000 -p {RAW_DATA_DIR}"
+    )
 
     # Extract the dataset
     print("Extracting dataset...")
@@ -57,6 +60,10 @@ def download_and_extract_ham10000():
     else:
         print(f"Error: ZIP file not found at {zip_path}")
 
+    # TODO: Remove zip file after extraction
+    if zip_path.exists():
+        os.remove(zip_path)
+
 
 def organize_data():
     """
@@ -69,9 +76,10 @@ def organize_data():
     if not metadata_path.exists():
         raise FileNotFoundError(f"Metadata file not found at {metadata_path}")
 
-    print("Merging Directories")
+    # # ! WHHY ??
+    # print("Merging Directories")
+    # shutil.copytree(HAM10000_IMAGES_PART2, HAM10000_IMAGES_PART1, dirs_exist_ok=True)
 
-    shutil.copytree(HAM10000_IMAGES_PART2, HAM10000_IMAGES_PART1, dirs_exist_ok=True)
     metadata = pd.read_csv(metadata_path)
 
     # Create class directories
@@ -83,8 +91,8 @@ def organize_data():
     image_dirs = [HAM10000_IMAGES_PART1, HAM10000_IMAGES_PART2]
 
     for _, row in tqdm(metadata.iterrows(), total=len(metadata)):
-        img_id = row['image_id']
-        dx = row['dx']  # Diagnosis/class
+        img_id = row["image_id"]
+        dx = row["dx"]  # Diagnosis/class
 
         # Find the image
         found = False
@@ -119,7 +127,9 @@ class HAM10000Dataset(Dataset):
         self.is_binary = is_binary
 
         # Create a mapping from class names to indices
-        self.class_to_idx = {class_name: idx for idx, class_name in enumerate(CLASS_NAMES.keys())}
+        self.class_to_idx = {
+            class_name: idx for idx, class_name in enumerate(CLASS_NAMES.keys())
+        }
 
     def __len__(self):
         return len(self.df)
@@ -144,7 +154,6 @@ class HAM10000Dataset(Dataset):
                 label = 0
 
         if self.transform:
-
             image = self.transform(image)
         # print(image.shape)
         return image, label
@@ -192,7 +201,7 @@ def get_transforms(stage="train"):
         )
 
 
-def prepare_data(metadata_path=None, balanced=True, is_binary=False):
+def prepare_data(metadata_path=None, balanced=False, is_binary=False):
     """
     Prepare train, validation, and test datasets.
 
@@ -242,7 +251,7 @@ def prepare_data(metadata_path=None, balanced=True, is_binary=False):
     )
 
     val_df, test_df = train_test_split(
-        temp_df,test_size=0.5, random_state=RANDOM_SEED, stratify=temp_df["dx"]
+        temp_df, test_size=0.5, random_state=RANDOM_SEED, stratify=temp_df["dx"]
     )
 
     print(f"Train set: {len(train_df)} images")
@@ -258,7 +267,10 @@ def prepare_data(metadata_path=None, balanced=True, is_binary=False):
     )
 
     val_dataset = HAM10000Dataset(
-        val_df, HAM10000_IMAGES_PART1, transform=get_transforms("val"), is_binary=is_binary
+        val_df,
+        HAM10000_IMAGES_PART1,
+        transform=get_transforms("val"),
+        is_binary=is_binary,
     )
 
     test_dataset = HAM10000Dataset(

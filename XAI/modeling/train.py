@@ -2,36 +2,37 @@
 Training script for the skin lesion classification model.
 """
 
+import datetime
 import os
 import time
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pathlib import Path
+import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.tensorboard import SummaryWriter
-from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
 import torchvision
+
+# from torch.utils.tensorboard import SummaryWriter
+from sklearn.metrics import classification_report, confusion_matrix
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from tqdm import tqdm
 
 from XAI.config import (
-    MODELS_DIR,
-    FIGURES_DIR,
     CLASS_NAMES,
-    RANDOM_SEED,
-    NUM_EPOCHS,
+    FIGURES_DIR,
     LEARNING_RATE,
     LR_MIN,
+    MODELS_DIR,
+    NUM_EPOCHS,
+    RANDOM_SEED,
 )
 from XAI.dataset import prepare_data
-
+from XAI.modeling.AllModels import device, dl_models
 from XAI.modeling.ResizeLayer import ResizedModel
-from XAI.modeling.AllModels import dl_models, device
-import datetime
 
 
 def set_seed(seed=RANDOM_SEED):
@@ -80,11 +81,17 @@ def train_model(
         tuple: Trained model and dictionary with training history
     """
     # Initialize tensorboard writer
-    writer = SummaryWriter(f"./runs/{model.name()}-{datetime.datetime.now()}")
+    # writer = SummaryWriter(f"./runs/{model.name()}-{datetime.datetime.now()}")
 
     # Initialize variables to track training progress
     best_val_loss = float("inf")
-    history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": [], "lr": []}
+    history = {
+        "train_loss": [],
+        "train_acc": [],
+        "val_loss": [],
+        "val_acc": [],
+        "lr": [],
+    }
 
     # Start training
     start_time = time.time()
@@ -96,7 +103,7 @@ def train_model(
         train_total = 0
 
         # Training loop
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}")
+        pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{num_epochs}")
         for inputs, labels in pbar:
             inputs, labels = inputs.to(device), labels.to(device)
 
@@ -108,7 +115,7 @@ def train_model(
 
             # Create a grid of images and write to TensorBoard
             img_grid = torchvision.utils.make_grid(inputs.cpu())
-            writer.add_image("train_images", img_grid, global_step=epoch)
+            # writer.add_image("train_images", img_grid, global_step=epoch)
 
             # Forward pass
             outputs = model(inputs)
@@ -137,18 +144,20 @@ def train_model(
         train_acc = train_correct / train_total
 
         # Evaluate on validation set
-        val_loss, val_acc = evaluate_model(model, val_loader, criterion, device, is_binary)
+        val_loss, val_acc = evaluate_model(
+            model, val_loader, criterion, device, is_binary
+        )
 
         # Adjust learning rate
         current_lr = optimizer.param_groups[0]["lr"]
         scheduler.step(val_loss)
 
         # Log metrics
-        writer.add_scalar("Loss/train", train_loss, epoch)
-        writer.add_scalar("Loss/val", val_loss, epoch)
-        writer.add_scalar("Accuracy/train", train_acc, epoch)
-        writer.add_scalar("Accuracy/val", val_acc, epoch)
-        writer.add_scalar("Learning Rate", current_lr, epoch)
+        # writer.add_scalar("Loss/train", train_loss, epoch)
+        # writer.add_scalar("Loss/val", val_loss, epoch)
+        # writer.add_scalar("Accuracy/train", train_acc, epoch)
+        # writer.add_scalar("Accuracy/val", val_acc, epoch)
+        # writer.add_scalar("Learning Rate", current_lr, epoch)
 
         # Save metrics to history
         history["train_loss"].append(train_loss)
@@ -159,7 +168,7 @@ def train_model(
 
         # Print progress
         print(
-            f"Epoch {epoch+1}/{num_epochs} | "
+            f"Epoch {epoch + 1}/{num_epochs} | "
             f"Train Loss: {train_loss:.4f} | "
             f"Train Acc: {train_acc:.4f} | "
             f"Val Loss: {val_loss:.4f} | "
@@ -173,7 +182,7 @@ def train_model(
             if model_save:
                 model_save_dir = (
                     MODELS_DIR
-                    / f"{model.name()}-{round(val_acc,4)}-e{epoch}-{datetime.datetime.now()}.pth"
+                    / f"{model.name()}-{round(val_acc, 4)}-e{epoch}-{datetime.datetime.now()}.pth"
                 )
 
                 torch.save(
@@ -194,7 +203,7 @@ def train_model(
     print(f"Best val Acc: {best_val_acc:.4f}")
 
     # Close tensorboard writer
-    writer.close()
+    # writer.close()
 
     return model, history
 
@@ -283,7 +292,11 @@ def test_model(model, test_loader, device, save_results=True):
     # Print results
     print(f"\nTest Accuracy: {accuracy:.4f}")
     print("\nClassification Report:")
-    print(classification_report(all_labels, all_preds, target_names=list(CLASS_NAMES.values())))
+    print(
+        classification_report(
+            all_labels, all_preds, target_names=list(CLASS_NAMES.values())
+        )
+    )
 
     # Save results if requested
     if save_results:
@@ -403,7 +416,9 @@ def load_best_model(model_name):
     checkpoint = torch.load(best_model_path)
 
     print(f"Found best model checkpoint: {best_model_path}")
-    print(f"Validation accuracy: {get_val_acc(best_model_path):.4f}, Epoch: {checkpoint['epoch']}")
+    print(
+        f"Validation accuracy: {get_val_acc(best_model_path):.4f}, Epoch: {checkpoint['epoch']}"
+    )
 
     return best_model_path, checkpoint
 
@@ -417,7 +432,9 @@ def main(model_idx=-1):
     #     isBinary = True
 
     # Prepare data
-    train_loader, val_loader, test_loader = prepare_data(is_binary=isBinary, balanced=False)
+    train_loader, val_loader, test_loader = prepare_data(
+        is_binary=isBinary, balanced=False
+    )
     criterion = nn.BCEWithLogitsLoss() if isBinary else nn.CrossEntropyLoss()
     model = []
     history = []
@@ -427,9 +444,12 @@ def main(model_idx=-1):
     os.makedirs(MODELS_DIR, exist_ok=True)
 
     for i in range(
-        0 if model_idx == -1 else model_idx, len(dl_models) if model_idx == -1 else model_idx + 1
+        0 if model_idx == -1 else model_idx,
+        len(dl_models) if model_idx == -1 else model_idx + 1,
     ):
-        print(f"Training Model {dl_models[i].name()} with input size {dl_models[i].inputSize()}")
+        print(
+            f"Training Model {dl_models[i].name()} with input size {dl_models[i].inputSize()}"
+        )
         currentModel = ResizedModel(dl_models[i].inputSize(), dl_models[i]()).to(device)
 
         # Check if we have a saved model and load it
@@ -483,7 +503,9 @@ def main(model_idx=-1):
         plot_training_history(currentHistory, save_path=history_plot_path)
 
         # Test model
-        current_test_results = test_model(currentModel, test_loader, device, save_results=True)
+        current_test_results = test_model(
+            currentModel, test_loader, device, save_results=True
+        )
         test_results.append(current_test_results)
 
     return currentModel, currentHistory, test_results
